@@ -283,6 +283,7 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
     }
     
     override func clear() {
+        mainStatus = .none
         delayRestartTimer?.invalidate()
         delayRestartTimer = nil
         isLoseChecking = false
@@ -292,7 +293,6 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
         resumeInfoCacheForImageReview = nil
         currentTask?.stopTimer()
         currentTask = nil
-        mainStatus = .none
         endMode = .noSend
         progress.reset()
     }
@@ -335,7 +335,7 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             // 超时任务确定是当前任务，置空当前任务
             self.currentTask = nil
         }
-        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时")
+        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时 \(task.name())")
         task.baseCompletion?(task,nil,error)
     }
     
@@ -720,7 +720,7 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             let nextSliceIndex = sliceIndex + 1
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 还未到末尾
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
                     self.otaNorV2StepImagePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else {

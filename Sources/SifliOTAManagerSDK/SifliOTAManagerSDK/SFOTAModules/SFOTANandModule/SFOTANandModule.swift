@@ -602,7 +602,7 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 不是最后一个包，继续发送
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
                     self.otaNandResStepSendFilePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else{
@@ -926,6 +926,9 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             OLog("otaNandHCPUStepImagePacketData mainStatus != .image ignore")
             return
         }
+        if(self.imageFileArray.count == 0){
+            return;
+        }
         let file = imageFileArray[fileIndex]
         let imageId = file.imageID
         if(sliceIndex == file.dataSliceArray.count){
@@ -1003,7 +1006,7 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             let nextSliceIndex = sliceIndex + 1
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 还未到末尾
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
                     self.otaNandHCPUStepImagePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else {
@@ -1129,12 +1132,13 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             // 超时任务确定是当前任务，置空当前任务
             self.currentTask = nil
         }
-        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时")
+        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时 \(task.name())")
         task.baseCompletion?(task,nil,error)
     }
     
     /// OTA结束后的清理工作
     override func clear() {
+        mainStatus = .none
         delayRestartTimer?.invalidate()
         delayRestartTimer = nil
         isLoseChecking = false
@@ -1144,7 +1148,6 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
         tryResume = false
         currentTask?.stopTimer()
         currentTask = nil
-        mainStatus = .none
         resProgress.reset()
         imageProgress.reset()
     }

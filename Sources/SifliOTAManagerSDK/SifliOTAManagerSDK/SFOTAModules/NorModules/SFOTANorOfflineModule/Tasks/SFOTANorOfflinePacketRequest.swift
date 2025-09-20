@@ -24,7 +24,7 @@ class SFOTANorOfflinePacketRequest: OTANorV2TaskBase {
     let crc:UInt32
     let packetData:Data
     let completion:SSFOTANorOfflinePacketRequestCompletion?
-    init(packetOrder: UInt32, dataLength: UInt32, crc: UInt32, packetData: Data,completion: @escaping SSFOTANorOfflinePacketRequestCompletion) {
+    init(packetOrder: UInt32, dataLength: UInt32, crc: UInt32, packetData: Data,completion: SSFOTANorOfflinePacketRequestCompletion?) {
         self.completion = completion
         self.packetOrder = packetOrder
         self.dataLength = dataLength

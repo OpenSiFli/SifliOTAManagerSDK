@@ -9,4 +9,7 @@ import Foundation
 ///1.2.30 ota nor offline
 ///1.2.31 ota nand
 ///1.2.32 ota nand order najumber 改为UInt16,增加文件超过范围检查
-let Const_SDKVersion = "1.2.32"
+///1.2.33 适配iOS18，蓝牙工作队列优化
+///1.2.34  ble流控优化
+///1.2.35 sdk-ota nor offline 支持回复频率
+let Const_SDKVersion = "1.2.35"

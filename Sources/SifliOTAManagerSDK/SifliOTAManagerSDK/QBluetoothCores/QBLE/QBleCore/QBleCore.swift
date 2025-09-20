@@ -70,8 +70,8 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
     
     weak var delegate:QBleCoreDelegate?
     
-    
-    private let centralManager = CBCentralManager()
+    public let bleQueue = DispatchQueue(label: "com.sifli.sfotamanagersdk.blequeue", qos: .userInitiated)
+    private let centralManager: CBCentralManager
     private let uuid = UUID.init().uuidString
     
     private(set) var tempPeripheral :CBPeripheral?
@@ -88,7 +88,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
     private var hasCallBackSuccess = false
     
     private var errPool = Array<QError>.init()
-    
+    private var writeDataQueue = Array<Data>.init()
     
     func retrievePairedPeripherals() ->  [CBPeripheral]{
         let uuid = CBUUID.init(string: DeviceServiceUUID)
@@ -200,11 +200,64 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
     }
     
     func writeValueForWriteCharateristic(value:Data){
+        if(self.tempPeripheral == nil){
+            OLog("❌向'写'特征写入数据失败:tempPeripheral = nil")
+            return;
+        }
         if self.isShakedHands {
-//            QPrint("尝试向BLE写入数据:\(NSData.init(data: value).debugDescription)")
-            self.tempPeripheral?.writeValue(value, for: self.writeCharacteristic!, type: .withoutResponse)
+            if(value.count < 100){
+                OLog("尝试向BLE写入数据:\(NSData.init(data: value).debugDescription)")
+            }else{
+                OLog("尝试向BLE写入数据:\(value.count)")
+            }
+           
+            if #available(iOS 11.0, *) {
+                if(self.tempPeripheral!.canSendWriteWithoutResponse){
+                    self.tempPeripheral?.writeValue(value, for: self.writeCharacteristic!, type: .withoutResponse)
+                }else{
+//                    OLog("⚠️canSendWriteWithoutResponse = false,append data to writeDataQueue")
+                    //写入繁忙，暂时缓存到队列中
+                    self.writeDataQueue.append(value);
+                }
+            } else {
+                // Fallback on earlier versions
+                self.tempPeripheral?.writeValue(value, for: self.writeCharacteristic!, type: .withoutResponse)
+            }
+           
         }else{
-            QPrint("❌向'写'特征写入数据失败:没有握手")
+            OLog("❌向'写'特征写入数据失败:没有握手")
+        }
+    }
+    
+    func clearWriteQueue(){
+        self.writeDataQueue.removeAll()
+    }
+    
+    func processQueue() {
+        OLog("processQueue count=\(writeDataQueue.count)",enableToDelegate: false)
+        if(writeDataQueue.isEmpty){
+            OLog("writeDataQueue.isEmpty")
+            return;
+        }
+        if #available(iOS 11.0, *) {
+            guard let peripheral = tempPeripheral,
+                  let characteristic = writeCharacteristic,
+                  peripheral.canSendWriteWithoutResponse else {
+                OLog("processQueue canSendWriteWithoutResponse = false,wait it's ready to send",enableToDelegate: false)
+                return
+            }
+            
+            let dataToSend = writeDataQueue.removeFirst()
+            peripheral.writeValue(dataToSend,
+                                  for: characteristic,
+                                  type: .withoutResponse)
+            // 如果队列中仍有数据但当前无法发送，安排下次检查
+            if !writeDataQueue.isEmpty {
+                bleQueue.async {
+                    OLog("processQueue continue...",enableToDelegate: false)
+                    self.processQueue()
+                }
+            }
         }
     }
     
@@ -468,9 +521,16 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
         }
     }
     
+    func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        OLog("peripheralIsReadytoSendWriteWithoutResponse",enableToDelegate: false)
+        self.processQueue()
+    }
+    
     private override init() {
+//        let options: [String: Any] = [CBCentralManagerOptionRestoreIdentifierKey: "YourUniqueBLEID"]
+        self.centralManager = CBCentralManager(delegate: nil, queue: bleQueue)
         super.init()
-        centralManager.delegate = self
+        self.centralManager.delegate = self
     }
     
     
@@ -537,6 +597,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
         readCharacteristic = nil
         hasCallBackSuccess = false
         errPool.removeAll()
+        writeDataQueue.removeAll()
     }
     
     

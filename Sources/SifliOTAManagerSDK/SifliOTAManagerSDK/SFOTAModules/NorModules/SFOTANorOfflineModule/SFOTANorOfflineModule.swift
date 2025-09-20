@@ -177,7 +177,7 @@ class SFOTANorOfflineModule: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             // 超时任务确定是当前任务，置空当前任务
             self.currentTask = nil
         }
-        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时")
+        let error = SFOTAError.init(errorType: .RequestTimeout, errorDes: "请求超时 \(task.name())")
         task.baseCompletion?(task,nil,error)
     }
     
@@ -211,6 +211,7 @@ class SFOTANorOfflineModule: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
         }
         self.offlineImageFile = NorOfflineImageFile.init(crc32: crc32, data: fileData)
         self.progress.totalBytes = fileData.count;
+        self.progress.continueSendNoResponsePacketCount = 0;
         self.mainStatus = .dfuInitConnecting
         /// 发起连接请求，等待ble
         OLog("otaModuleReconnectRequest...")
@@ -246,6 +247,13 @@ class SFOTANorOfflineModule: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
                         
 //            var resume = false
             var sliceIndex:Int = 0
+            if(message.rspFrq > 0){
+                OLog("▶️即将使用的responseFrequency from device: \(message.rspFrq)")
+                s.progress.responseFrequency = Int(message.rspFrq);
+            }else{
+                OLog("▶️即将使用的responseFrequency: 1")
+                s.progress.responseFrequency = 1;
+            }
             if message.completeCount > 0 {
                 
                 // 需要从指定imageId开始
@@ -253,7 +261,9 @@ class SFOTANorOfflineModule: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
                 sliceIndex = Int(message.completeCount);
                 s.progress.completedFileSliceCount = Int(message.completeCount)
                 OLog("▶️即将使用的resume条件: fileIndex=\(s.progress.currentFileIndex), completedCount=\(s.progress.completedFileSliceCount)")
+                s.progress.continueSendNoResponsePacketCount = Int(message.completeCount)%s.progress.responseFrequency
             }
+            
             s.delegate?.otaModuleProgress(module: s, stage: .nor, stageTotalBytes: s.progress.totalBytes, stageCompletedBytes: s.completedBytes)
             s.otaNorOfflineStepPacketReq(sliceIndex: sliceIndex)
         }
@@ -274,52 +284,76 @@ class SFOTANorOfflineModule: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             self.otaNorOfflineEndReq()
             return;
         }
+        let needRsp = progress.continueSendNoResponsePacketCount == progress.responseFrequency - 1
+        if progress.continueSendNoResponsePacketCount >= progress.responseFrequency {
+            fatalError("❌continueSendNoResponsePacketCount=\(progress.continueSendNoResponsePacketCount) OverRange responseFrequency=\(progress.responseFrequency)")
+        }
+        let lastPacket = sliceIndex == self.offlineImageFile!.dataSliceArray.count - 1;
         let packetOrder = UInt32(sliceIndex + 1)
         let packetData = self.offlineImageFile!.dataSliceArray[sliceIndex]
         let dataLength = UInt32(packetData.count)
         var verifyValue = CRCUtil.CRC32_MPEG2(src: packetData, offset: 0, length: packetData.count)
-        let packetRequest = SFOTANorOfflinePacketRequest.init(packetOrder: packetOrder, dataLength: dataLength, crc: verifyValue, packetData: packetData) { [weak self]task, msg, error in
-            guard let s = self else {
-                return
+        if needRsp || lastPacket{
+            let packetRequest = SFOTANorOfflinePacketRequest.init(packetOrder: packetOrder, dataLength: dataLength, crc: verifyValue, packetData: packetData) { [weak self]task, msg, error in
+                guard let s = self else {
+                    return
+                }
+                if let err = error {
+                    LogTaskError(taskDes: task.name(), error: err)
+                    s.delegate?.otaModuleCompletion(module: s, error: err)
+                    return
+                }
+                let packetMsg:NorOfflinePacketMsg = msg!
+                let result = packetMsg.result
+                OLog("✅\(task.name())响应（orderNumer=\(task.packetOrder), sliceLength=\(task.packetData.count)）: result=\(result),retransmission=\(packetMsg.retransmission),completeCount=\(packetMsg.completeCount)")
+                
+                if result != 0 && packetMsg.retransmission == 0{
+                    //有错误码，且不需要续传，则认为是出错。
+                    LogDevErrorCode(taskDes: task.name(), errorCode: Int(result))
+                    let err = SFOTAError.DevErrorCode(errorCode: Int(result))
+                    s.delegate?.otaModuleCompletion(module: s, error: err)
+                    return
+                }
+                var nextSliceIndex = sliceIndex + 1
+                if(packetMsg.retransmission == 1){
+                    //需要调整发送序号为手表指定
+                    OLog("设备要求调整包序号... =>\(packetMsg.completeCount)")
+                    nextSliceIndex = Int(packetMsg.completeCount);
+                    s.progress.continueSendNoResponsePacketCount = Int(packetMsg.completeCount)%s.progress.responseFrequency
+                }
+                
+                s.progress.completedFileSliceCount = nextSliceIndex
+                let completedBytes = s.completedBytes
+                
+                // 回调进度
+                s.delegate?.otaModuleProgress(module: s, stage: .nor, stageTotalBytes: s.progress.totalBytes, stageCompletedBytes: completedBytes)
+                
+                if nextSliceIndex <= s.offlineImageFile!.dataSliceArray.count - 1 {
+                    // 还未发送完毕
+                    s.otaNorOfflineStepPacketReq(sliceIndex: nextSliceIndex)
+                }else {
+                    // 已经发送完毕
+                    s.otaNorOfflineEndReq()
+                }
             }
-            if let err = error {
-                LogTaskError(taskDes: task.name(), error: err)
-                s.delegate?.otaModuleCompletion(module: s, error: err)
-                return
-            }
-            let packetMsg:NorOfflinePacketMsg = msg!
-            let result = packetMsg.result
-            OLog("✅\(task.name())响应（orderNumer=\(task.packetOrder), sliceLength=\(task.packetData.count)）: result=\(result),retransmission=\(packetMsg.retransmission),completeCount=\(packetMsg.completeCount)")
-            
-            if result != 0 && packetMsg.retransmission == 0{
-                //有错误码，且不需要续传，则认为是出错。
-                LogDevErrorCode(taskDes: task.name(), errorCode: Int(result))
-                let err = SFOTAError.DevErrorCode(errorCode: Int(result))
-                s.delegate?.otaModuleCompletion(module: s, error: err)
-                return
-            }
-            var nextSliceIndex = sliceIndex + 1
-            if(packetMsg.retransmission == 1){
-                //需要调整发送序号为手表指定
-                OLog("设备要求调整包序号... =>\(packetMsg.completeCount)")
-                nextSliceIndex = Int(packetMsg.completeCount);
-            }
-            
-            s.progress.completedFileSliceCount = nextSliceIndex
-            let completedBytes = s.completedBytes
-            
-            // 回调进度
-            s.delegate?.otaModuleProgress(module: s, stage: .nor, stageTotalBytes: s.progress.totalBytes, stageCompletedBytes: completedBytes)
-            
-            if nextSliceIndex <= s.offlineImageFile!.dataSliceArray.count - 1 {
-                // 还未发送完毕
-                s.otaNorOfflineStepPacketReq(sliceIndex: nextSliceIndex)
+            self.progress.continueSendNoResponsePacketCount = 0;
+            self.resume(task: packetRequest)
+        }else{
+            let packetRequest = SFOTANorOfflinePacketRequest.init(packetOrder: packetOrder, dataLength: dataLength, crc: verifyValue, packetData: packetData,completion:nil);
+            self.resume(task: packetRequest)
+            progress.continueSendNoResponsePacketCount += 1
+            let nextSliceIndex = sliceIndex + 1
+            if nextSliceIndex <= self.offlineImageFile!.dataSliceArray.count - 1 {
+                // 还未到末尾
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
+                    self.otaNorOfflineStepPacketReq(sliceIndex: nextSliceIndex)
+                }
             }else {
-                // 已经发送完毕
-                s.otaNorOfflineEndReq()
+                // 最后一包必然有回复，等待回复
+                QPrint("no more packet, wait response...")
             }
         }
-        self.resume(task: packetRequest)
+       
     }
     
     private func otaNorOfflineEndReq(){

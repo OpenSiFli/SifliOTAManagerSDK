@@ -8,12 +8,14 @@
 import UIKit
 class NorOfflineStartRequestMsg:NSObject {
     let result:UInt16
-    let reserved:UInt16
+    let reserved:UInt8
+    let rspFrq:UInt8
     let completeCount:UInt32
-    init(result: UInt16, reserved: UInt16, completeCount: UInt32) {
+    init(result: UInt16, reserved: UInt8, completeCount: UInt32,rspFrq:UInt8) {
         self.result = result
         self.reserved = reserved
         self.completeCount = completeCount
+        self.rspFrq = rspFrq;
     }
 }
 typealias SFOTANorOfflineStartRequestCompletion = (_ task:SFOTANorOfflineStartRequest, _ msg:NorOfflineStartRequestMsg?, _ error:SFOTAError?) -> Void
@@ -22,11 +24,13 @@ class SFOTANorOfflineStartRequest: OTANorV2TaskBase {
     let fileLength:UInt32
     let packetCount:UInt32
     let crc32:UInt32
+    let version:UInt8;
     init(fileLength: UInt32, packetCount: UInt32, crc32: UInt32,completion: @escaping SFOTANorOfflineStartRequestCompletion) {
         self.completion = completion
         self.fileLength = fileLength
         self.packetCount = packetCount
         self.crc32 = crc32
+        self.version = 1;
         super.init(messageType: .DFU_IMAGE_OFFLINE_START_REQ)
         
         self.baseCompletion = {[weak self] (tsk, msg, error) in
@@ -50,13 +54,16 @@ class SFOTANorOfflineStartRequest: OTANorV2TaskBase {
             var result:UInt16 = 0
             pd.getBytes(&result, range: NSRange.init(location: 0, length: 2))
             
-            var reserved:UInt16 = 0
-            pd.getBytes(&reserved, range: NSRange.init(location: 2, length: 2))
+            var rspFrq:UInt8 = 0
+            pd.getBytes(&rspFrq, range: NSRange.init(location: 2, length: 1))
+            
+            var reserved:UInt8 = 0
+            pd.getBytes(&reserved, range: NSRange.init(location: 3, length: 1))
             
             var completedCount:UInt32 = 0
             pd.getBytes(&completedCount, range: NSRange.init(location: 4, length: 4))
             
-            let msgModel = NorOfflineStartRequestMsg.init(result: result, reserved: reserved, completeCount: completedCount)
+            let msgModel = NorOfflineStartRequestMsg.init(result: result, reserved: reserved, completeCount: completedCount,rspFrq: rspFrq)
             
             s.completion(s, msgModel, nil)
         }
@@ -76,6 +83,12 @@ class SFOTANorOfflineStartRequest: OTANorV2TaskBase {
         var crcVar = self.crc32
         let crcData = Data.init(bytes: &crcVar, count: 4)
         
-        return fileLenData + countData + crcData
+        var versionVar = self.version;
+        let versionData = Data.init(bytes: &versionVar, count: 1)
+        
+        let reservedData = Data(repeating: 0, count: 3)
+        
+        
+        return fileLenData + countData + crcData + versionData + reservedData;
     }
 }

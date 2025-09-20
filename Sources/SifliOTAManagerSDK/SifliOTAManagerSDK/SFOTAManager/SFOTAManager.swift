@@ -328,7 +328,9 @@ enum ManagerStatus {
         }
         curModule.bleEventHandler(bleCore: core, event: .updateState, object: state)
 //        let bleState = transToBleState(state: state)
-        delegate?.otaManager(manager: self, updateBleState: state)
+        DispatchQueue.main.async {
+            self.delegate?.otaManager(manager: self, updateBleState: state)
+        }
     }
     // 找到外设
     func bleCore(core: QBleCore, didDiscover peripheral: CBPeripheral) {
@@ -479,12 +481,16 @@ enum ManagerStatus {
     }
     /// 模块向Manager回调进度信息
     func otaModuleProgress(module: SFOTAModuleBase, stage: SFOTAProgressStage, stageTotalBytes: Int, stageCompletedBytes: Int) {
-        self.delegate?.otaManager(manager: self, stage: stage, totalBytes: stageTotalBytes, completedBytes: stageCompletedBytes)
+        DispatchQueue.main.async {
+            self.delegate?.otaManager(manager: self, stage: stage, totalBytes: stageTotalBytes, completedBytes: stageCompletedBytes)
+        }
     }
     /// 模块向Manager回调完成信息
     func otaModuleCompletion(module: SFOTAModuleBase, error: SFOTAError?) {
         clearCaches()
-        self.delegate?.otaManager(manager: self, complete: error)
+        DispatchQueue.main.async {
+            self.delegate?.otaManager(manager: self, complete: error)
+        }
     }
     /// 模块通过该代理函数获取是否握手
     func otaModuleShakedHands() -> Bool {
@@ -511,8 +517,12 @@ enum ManagerStatus {
     private func clearCaches() {
         
         bleCore.stopScan()
-        currentModule?.clear()
-        currentModule = nil
+        if let module = self.currentModule{
+            self.currentModule = nil
+            module.clear()
+        }
+//        currentModule?.clear()
+//        currentModule = nil
         targetDevIdentifier = nil
         searchTimer?.invalidate()
         searchTimer = nil
