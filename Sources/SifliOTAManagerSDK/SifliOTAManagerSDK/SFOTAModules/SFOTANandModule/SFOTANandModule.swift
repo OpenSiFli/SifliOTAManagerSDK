@@ -41,7 +41,7 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
     /// 当前正在等待响应的任务
     private var currentTask:OTANandTaskBase?
     
-    private var delayRestartTimer:Timer?
+//    private var delayRestartTimer:Timer?
     private var deviceOtaVersion:UInt32
     
     private let resProgress = NandProgressRecord.init()
@@ -360,6 +360,11 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
                 OLog("⚠️当前未在resource/Image发送阶段，忽略LoseCheckRequest")
                 return
             }
+            
+            if self.isLoseChecking == true {
+                OLog("⚠️isLoseChecking = true，忽略LoseCheckRequest,避免堆积")
+                return
+            }
 
             if mainStatus == .resource {
                 let curFile = self.sortedResFileArray[self.resProgress.currentFileIndex]
@@ -391,8 +396,8 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             self.currentTask?.stopTimer()
             self.currentTask = nil
             
-            self.delayRestartTimer?.invalidate()
-            self.delayRestartTimer = nil
+//            self.delayRestartTimer?.invalidate()
+//            self.delayRestartTimer = nil
             
             // 回复设备,协议中规定result暂时填0
             let rspTask = OTANandTaskLoseCheckResponse.init(result: 0)
@@ -400,9 +405,12 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             
             OLog("⚠️调整包序号，1秒后重发。。。")
 //            let status = self.mainStatus
-            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
-            self.delayRestartTimer = timer
-            RunLoop.main.add(timer, forMode: .default)
+//            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
+//            self.delayRestartTimer = timer
+//            RunLoop.main.add(timer, forMode: .default)
+            QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 1) {
+                self.delayRestartTimeoutHandler()
+            }
         }else if messageType == .ABORT {
             
             let payloadDes = NSData.init(data: messageData).debugDescription
@@ -413,9 +421,10 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
         }
     }
     
-    @objc private func delayRestartTimeoutHandler(timer: Timer) {
-        self.delayRestartTimer?.invalidate()
-        self.delayRestartTimer = nil
+    @objc private func delayRestartTimeoutHandler() {
+        OLog("⚠️delayRestartTimeoutHandler")
+//        self.delayRestartTimer?.invalidate()
+//        self.delayRestartTimer = nil
         
         if !self.isLoseChecking {
             // 已经不在发送状态
@@ -602,7 +611,7 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
             
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 不是最后一个包，继续发送
-                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.001) {
                     self.otaNandResStepSendFilePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else{
@@ -1101,7 +1110,10 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
         }else {
             if self.currentTask != nil {
                 // 异常状态
-                fatalError("存在未完成的task: messageType=\(self.currentTask!.messageType)")
+//                fatalError("存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                OLog("❌存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                let error = SFOTAError(errorType: .SendError, errorDes: "收发数据错误")
+                self.delegate?.otaModuleCompletion(module: self, error: error)
             }else{
                 // 如果蓝牙未连接应该直接回调失败
                 if QBleCore.sharedInstance.isShakedHands == false {
@@ -1139,8 +1151,8 @@ class SFOTANandModule: SFOTAModuleBase, OTANandBaseTaskDelegate {
     /// OTA结束后的清理工作
     override func clear() {
         mainStatus = .none
-        delayRestartTimer?.invalidate()
-        delayRestartTimer = nil
+//        delayRestartTimer?.invalidate()
+//        delayRestartTimer = nil
         isLoseChecking = false
         sortedResFileArray.removeAll()
         controlFile = nil

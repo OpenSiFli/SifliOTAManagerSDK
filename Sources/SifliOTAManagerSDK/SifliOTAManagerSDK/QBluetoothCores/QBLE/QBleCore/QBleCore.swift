@@ -208,7 +208,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
             if(value.count < 100){
                 OLog("尝试向BLE写入数据:\(NSData.init(data: value).debugDescription)")
             }else{
-                OLog("尝试向BLE写入数据:\(value.count)")
+//                OLog("尝试向BLE写入数据:\(value.count)")
             }
            
             if #available(iOS 11.0, *) {

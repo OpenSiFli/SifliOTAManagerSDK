@@ -60,6 +60,8 @@ import UIKit
     case SendNoRspPacketOutSliceRange
     ///发送的固件文件超过了协议设计范围
     case FileTooLarge
+    ///收发时序错乱,发送数据时上一个数据包未得到相应
+    case SendError
 }
 
 @objc public class SFOTAError: NSObject {

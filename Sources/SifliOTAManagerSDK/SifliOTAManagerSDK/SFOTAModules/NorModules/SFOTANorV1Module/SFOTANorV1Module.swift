@@ -48,7 +48,7 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
     /// 当前正在等待响应的任务
     private var currentTask:OTANorV1TaskBase?
     
-    private var delayRestartTimer:Timer?
+//    private var delayRestartTimer:Timer?
     
     private let progress = NorProgressRecord.init()
     private var completedBytes:Int {
@@ -231,6 +231,11 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
                 return
             }
             
+            if self.isLoseChecking == true {
+                OLog("⚠️isLoseChecking = true，忽略LoseCheckRequest,避免堆积")
+                return
+            }
+            
             let curFile = self.imageFileArray[self.progress.currentFileIndex]
             let sliceCount = curFile.dataSliceArray.count
             if sliceCount <= completedCount {
@@ -247,23 +252,26 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
             self.currentTask?.stopTimer()
             self.currentTask = nil
             
-            self.delayRestartTimer?.invalidate()
-            self.delayRestartTimer = nil
+//            self.delayRestartTimer?.invalidate()
+//            self.delayRestartTimer = nil
             
             // 回复设备,协议中规定result暂时填0
             let rspTask = OTANorV1TaskLoseCheckResponse.init(result: 0)
             self.resume(task:rspTask)
             
             OLog("⚠️调整包序号，1秒后重发。。。")
-            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
-            self.delayRestartTimer = timer
-            RunLoop.main.add(timer, forMode: .default)
+//            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
+//            self.delayRestartTimer = timer
+//            RunLoop.main.add(timer, forMode: .default)
+            QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 1) {
+                self.delayRestartTimeoutHandler()
+            }
         }else {
             OLog("⚠️未处理的NorV1-DevMessage: messageType=\(norV1Msg.messageType), payload=\(NSData.init(data: norV1Msg.payloadData).debugDescription)")
         }
     }
     
-    @objc private func delayRestartTimeoutHandler(timer:Timer) {
+    @objc private func delayRestartTimeoutHandler() {
         if !self.isLoseChecking {
             // 已经不在发送状态
             OLog("⚠️不在loseChecking状态，忽略针对LoseCheck的重发")
@@ -282,8 +290,8 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
     
     override func clear() {
         mainStatus = .none
-        delayRestartTimer?.invalidate()
-        delayRestartTimer = nil
+//        delayRestartTimer?.invalidate()
+//        delayRestartTimer = nil
         isLoseChecking = false
         controlFile = nil
         imageFileArray.removeAll()
@@ -305,7 +313,10 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
         }else {
             if self.currentTask != nil {
                 // 异常状态
-                fatalError("存在未完成的task: messageType=\(self.currentTask!.messageType)")
+//                fatalError("存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                OLog("❌存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                let error = SFOTAError(errorType: .SendError, errorDes: "收发数据错误")
+                self.delegate?.otaModuleCompletion(module: self, error: error)
             }else{
                 // 如果蓝牙未连接应该直接回调失败
                 if self.delegate!.otaModuleShakedHands() == false {
@@ -669,7 +680,7 @@ class SFOTANorV1Module: SFOTAModuleBase,OTANorV1BaseTaskDelegate {
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 还未到末尾
 //                self.norV1StepImagePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
-                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.001) {
                     self.norV1StepImagePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else {

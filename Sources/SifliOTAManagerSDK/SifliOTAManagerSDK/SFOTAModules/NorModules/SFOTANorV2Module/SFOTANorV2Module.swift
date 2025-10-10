@@ -41,7 +41,7 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
     /// 当前正在等待响应的任务
     private var currentTask:OTANorV2TaskBase?
     
-    private var delayRestartTimer:Timer?
+//    private var delayRestartTimer:Timer?
     
     private let progress = NorProgressRecord.init()
     private var completedBytes:Int {
@@ -220,6 +220,11 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
                 return
             }
             
+            if self.isLoseChecking == true {
+                OLog("⚠️isLoseChecking = true，忽略LoseCheckRequest,避免堆积")
+                return
+            }
+            
             let curFile = self.imageFileArray[self.progress.currentFileIndex]
             let sliceCount = curFile.dataSliceArray.count
             if sliceCount <= completedCount {
@@ -238,21 +243,24 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             self.currentTask = nil
             
             
-            if let timer = self.delayRestartTimer, timer.isValid {
-                OLog("⚠️已经处于LoseCheck状态，刷新LoseCheck信息, completedFileSliceCount: \(progress.completedFileSliceCount)==>\(completedCount), responseFrequency: \(progress.responseFrequency) ==> \(rspFreq)")
-            }
+//            if let timer = self.delayRestartTimer, timer.isValid {
+//                OLog("⚠️已经处于LoseCheck状态，刷新LoseCheck信息, completedFileSliceCount: \(progress.completedFileSliceCount)==>\(completedCount), responseFrequency: \(progress.responseFrequency) ==> \(rspFreq)")
+//            }
             // 如果已经在LoseCheck状态，重置重启时间
-            self.delayRestartTimer?.invalidate()
-            self.delayRestartTimer = nil
+//            self.delayRestartTimer?.invalidate()
+//            self.delayRestartTimer = nil
             
             // 回复设备,协议中规定result暂时填0
             let rspTask = OTANorV2TaskLoseCheckResponse.init(result: 0)
             self.resume(task:rspTask)
             
             OLog("⚠️调整包序号，1秒后重发。。。")
-            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
-            self.delayRestartTimer = timer
-            RunLoop.main.add(timer, forMode: .default)
+//            let timer = Timer.init(timeInterval: 1.0, target: self, selector: #selector(delayRestartTimeoutHandler(timer:)), userInfo: nil, repeats: false)
+//            self.delayRestartTimer = timer
+//            RunLoop.main.add(timer, forMode: .default)
+            QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 1) {
+                self.delayRestartTimeoutHandler()
+            }
         }else if messageType == .ABORT {
             let payloadDes = NSData.init(data: messageData).debugDescription
             let error = SFOTAError.init(errorType: .General, errorDes: "Device Abort: \(payloadDes)")
@@ -262,9 +270,9 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
         }
     }
     
-    @objc private func delayRestartTimeoutHandler(timer:Timer) {
-        self.delayRestartTimer?.invalidate()
-        self.delayRestartTimer = nil
+    @objc private func delayRestartTimeoutHandler() {
+//        self.delayRestartTimer?.invalidate()
+//        self.delayRestartTimer = nil
         if !self.isLoseChecking {
             // 已经不在发送状态
             OLog("⚠️不在loseChecking状态，忽略针对LoseCheck的重发")
@@ -284,8 +292,8 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
     
     override func clear() {
         mainStatus = .none
-        delayRestartTimer?.invalidate()
-        delayRestartTimer = nil
+//        delayRestartTimer?.invalidate()
+//        delayRestartTimer = nil
         isLoseChecking = false
         controlFile = nil
         imageFileArray.removeAll()
@@ -307,7 +315,9 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
         }else {
             if self.currentTask != nil {
                 // 异常状态
-                fatalError("存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                OLog("❌存在未完成的task: messageType=\(self.currentTask!.messageType)")
+                let error = SFOTAError(errorType: .SendError, errorDes: "收发数据错误")
+                self.delegate?.otaModuleCompletion(module: self, error: error)
             }else{
                 // 如果蓝牙未连接应该直接回调失败
                 if self.delegate!.otaModuleShakedHands() == false {
@@ -655,6 +665,11 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             OLog("-otaNorV2StepImagePacketData- mainStatus != .dfuImage,ignore.")
             return;
         }
+        if self.isLoseChecking == true {
+            OLog("⚠️处于lose check状态，暂停发送")
+            return;
+        }
+        
         let file = imageFileArray[fileIndex]
         let imageId = file.imageID
         if sliceIndex == file.dataSliceArray.count {
@@ -720,7 +735,7 @@ class SFOTANorV2Module: SFOTAModuleBase,OTANorV2BaseTaskDelegate {
             let nextSliceIndex = sliceIndex + 1
             if nextSliceIndex <= file.dataSliceArray.count - 1 {
                 // 还未到末尾
-                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.005) {
+                QBleCore.sharedInstance.bleQueue.asyncAfter(deadline: .now() + 0.001) {
                     self.otaNorV2StepImagePacketData(fileIndex: fileIndex, sliceIndex: nextSliceIndex)
                 }
             }else {
