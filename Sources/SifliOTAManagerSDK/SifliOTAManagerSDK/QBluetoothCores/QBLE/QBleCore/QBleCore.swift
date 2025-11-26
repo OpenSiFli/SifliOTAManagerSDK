@@ -234,7 +234,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
     }
     
     func processQueue() {
-        OLog("processQueue count=\(writeDataQueue.count)",enableToDelegate: false)
+//        OLog("processQueue count=\(writeDataQueue.count)",enableToDelegate: false)
         if(writeDataQueue.isEmpty){
             OLog("writeDataQueue.isEmpty")
             return;
@@ -243,7 +243,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
             guard let peripheral = tempPeripheral,
                   let characteristic = writeCharacteristic,
                   peripheral.canSendWriteWithoutResponse else {
-                OLog("processQueue canSendWriteWithoutResponse = false,wait it's ready to send",enableToDelegate: false)
+//                OLog("processQueue canSendWriteWithoutResponse = false,wait it's ready to send",enableToDelegate: false)
                 return
             }
             
@@ -254,7 +254,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
             // 如果队列中仍有数据但当前无法发送，安排下次检查
             if !writeDataQueue.isEmpty {
                 bleQueue.async {
-                    OLog("processQueue continue...",enableToDelegate: false)
+//                    OLog("processQueue continue...",enableToDelegate: false)
                     self.processQueue()
                 }
             }
@@ -522,7 +522,7 @@ class QBleCore: NSObject,CBCentralManagerDelegate,CBPeripheralDelegate {
     }
     
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
-        OLog("peripheralIsReadytoSendWriteWithoutResponse",enableToDelegate: false)
+//        OLog("peripheralIsReadytoSendWriteWithoutResponse",enableToDelegate: false)
         self.processQueue()
     }
     

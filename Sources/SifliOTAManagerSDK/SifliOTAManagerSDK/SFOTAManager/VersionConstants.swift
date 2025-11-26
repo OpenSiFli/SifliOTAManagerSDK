@@ -13,4 +13,5 @@ import Foundation
 ///1.2.34  ble流控优化
 ///1.2.35 sdk-ota nor offline 支持回复频率
 ///1.2.36 lose check 重试从timer切换到blequeue
-let Const_SDKVersion = "1.2.36"
+///1.3.1 zip库切换为ZIPFoundation
+let Const_SDKVersion = "1.3.1"
