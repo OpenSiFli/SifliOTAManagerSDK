@@ -7,6 +7,11 @@
 https://github.com/OpenSiFli/SifliOTAManagerSDK.git
 ```
 
+ cocoapod 引入
+ 
+ ```bash
+ pod 'SifliOTAManagerSDK','1.3.2'
+ ```
 ## 接口调用
 ### ota nand
 
